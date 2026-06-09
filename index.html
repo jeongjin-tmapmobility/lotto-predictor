@@ -125,6 +125,13 @@
   }
   .data-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; }
 
+  .disclaimer {
+    max-width: 640px; margin: 0 auto 22px; padding: 12px 16px;
+    background: #1c1812; border: 1px solid #5c4a1e; border-radius: 10px;
+    font-size: 12px; line-height: 1.6; color: #d9c89e;
+  }
+  .disclaimer b { color: #f6c90e; }
+
   @media (max-width: 500px) {
     .settings-grid { grid-template-columns: 1fr; }
     .ball { width: 36px; height: 36px; font-size: 13px; }
@@ -137,8 +144,14 @@
   <h1>🎱 로또 번호 예측기</h1>
   <p class="subtitle">최근 200회차(1028~1227회) 당첨 데이터 통계 기반 분석</p>
 
-  <div style="text-align:center;margin-bottom:20px">
+  <div style="text-align:center;margin-bottom:14px">
     <span class="data-badge"><span class="dot"></span>200회차 데이터 내장 (2022.08 ~ 2026.06)</span>
+  </div>
+
+  <div class="disclaimer">
+    ⚠️ <b>로또는 완전 무작위 추첨</b>입니다. 자체 백테스트(100회 검증) 결과, 빈도·핫/콜드·단기경향 등
+    어떤 통계 전략도 무작위 대비 당첨 확률을 높이지 못했습니다.
+    이 도구는 <b>예측이 아니라 과거 패턴 분석·재미</b>를 위한 것입니다.
   </div>
 
   <div class="tabs">
@@ -160,13 +173,13 @@
         <div class="setting-item">
           <label>번호 합계 범위</label>
           <select id="s-sum">
-            <option value="tight">좁게 (115~165)</option>
+            <option value="tight">좁게 (108~168)</option>
             <option value="normal" selected>보통 (95~180)</option>
             <option value="wide">넓게 (70~210)</option>
           </select>
         </div>
         <div class="setting-item">
-          <label>빈도 가중치 전략</label>
+          <label>빈도 가중치 전략 <span style="color:#8b949e;font-weight:400">(취향용·예측력 없음)</span></label>
           <select id="s-weight">
             <option value="hot">핫 번호 우선 (고빈도)</option>
             <option value="cold">콜드 번호 우선 (저빈도)</option>
@@ -189,7 +202,7 @@
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="c-oddeven" checked>
-          <label for="c-oddeven">홀짝 균형 필터 — 홀수 2~4개 조합</label>
+          <label for="c-oddeven">홀짝 필터 — 홀수 2~4개 (역대 85% 분포, 최다는 홀4:짝2)</label>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="c-consec" checked>
@@ -309,7 +322,7 @@ function isValid(nums) {
   const sumMode  = document.getElementById('s-sum').value;
   const sum = nums.reduce((a,b)=>a+b,0);
 
-  if (sumMode==='tight'  && (sum<115||sum>165)) return false;
+  if (sumMode==='tight'  && (sum<108||sum>168)) return false;
   if (sumMode==='normal' && (sum<95 ||sum>180)) return false;
   if (sumMode==='wide'   && (sum<70 ||sum>210)) return false;
 
@@ -328,7 +341,7 @@ function isValid(nums) {
 }
 
 function computeScore(nums) {
-  // 통계 점수: 빈도 z-score 합 기반 0~100
+  // 패턴부합도: 과거 출현빈도 합 기반 0~100 (당첨 확률 아님 — 단순 참고치)
   const avg = DRAWS.length * 6 / 45;
   const raw = nums.reduce((s,n)=>s+(FREQ[n]-avg),0);
   return Math.min(100, Math.max(0, Math.round(50 + raw * 3)));
@@ -356,7 +369,7 @@ function renderResults(sets) {
       <div class="balls">
         ${s.nums.map(n=>`<div class="ball" style="${ballStyle(n)}">${n}</div>`).join('')}
       </div>
-      <div class="set-score">합계 <b style="color:#e6edf3">${s.sum}</b><br><span style="color:#f6c90e">★ ${s.score}점</span></div>
+      <div class="set-score" title="과거 출현빈도 합 기반 참고치 — 당첨 확률과 무관">합계 <b style="color:#e6edf3">${s.sum}</b><br><span style="color:#8b949e">패턴부합 ${s.score}</span></div>
     </div>
   `).join('');
 }
