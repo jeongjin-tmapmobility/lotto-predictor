@@ -157,6 +157,7 @@
   <div class="tabs">
     <button class="tab active" onclick="switchTab('predict')">번호 생성</button>
     <button class="tab" onclick="switchTab('stats')">통계 분석</button>
+    <button class="tab" onclick="switchTab('bold')">🎯 도전적 추출</button>
     <button class="tab" onclick="switchTab('history')">당첨 기록</button>
   </div>
 
@@ -235,6 +236,78 @@
     <div class="card">
       <h2>⚖️ 홀짝 비율 &amp; 기타 통계</h2>
       <div id="oddeven-chart"></div>
+    </div>
+  </div>
+
+  <!-- 도전적 추출 -->
+  <div id="tab-bold" class="panel">
+
+    <div class="card" style="border-color:#f6531544">
+      <h2>🎯 도전적 번호 추출 — 저빈도 번호 소거 전략</h2>
+      <p style="font-size:12px;color:#8b949e;margin-bottom:14px;line-height:1.7">
+        직전 200회 데이터에서 <b style="color:#f6c90e">출현 빈도가 낮은 번호를 소거</b>하고,
+        남은 풀에서 번호를 추출합니다.<br>
+        소거 수를 늘릴수록 조합 수는 줄지만, 당첨번호가 소거된 번호에 포함될 위험도 커집니다.<br>
+        <b style="color:#ff6b35">백테스트(100회) 기준 기대 확률 배수가 최대인 K=7이 기본값입니다.</b>
+      </p>
+
+      <!-- 백테스트 결과 요약표 -->
+      <div style="overflow-x:auto;margin-bottom:16px">
+        <table id="bold-bt-table" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="color:#8b949e;border-bottom:1px solid #30363d">
+              <th style="padding:6px 8px;text-align:center">소거K</th>
+              <th style="padding:6px 8px;text-align:center">풀크기</th>
+              <th style="padding:6px 8px;text-align:right">총조합수</th>
+              <th style="padding:6px 8px;text-align:center">커버율*</th>
+              <th style="padding:6px 8px;text-align:center">기대배수*</th>
+            </tr>
+          </thead>
+          <tbody id="bold-bt-body"></tbody>
+        </table>
+        <p style="font-size:11px;color:#8b949e;margin-top:6px">* 백테스트(직전100회 기준, 100회 검증) 결과 — 미래 보장 아님</p>
+      </div>
+
+      <!-- K 슬라이더 -->
+      <div style="margin-bottom:16px">
+        <label style="font-size:13px;color:#c9d1d9">
+          소거 번호 수: <b id="bold-k-val" style="color:#f6c90e">7</b>개
+          &nbsp;→&nbsp; 풀 <b id="bold-pool-val" style="color:#e6edf3">38</b>개
+          &nbsp;/&nbsp; 조합 <b id="bold-comb-val" style="color:#58a6ff">2,760,681</b>개
+          &nbsp;/&nbsp; 기대배수 <b id="bold-mult-val" style="color:#3fb950">1.09x</b>
+        </label>
+        <input type="range" id="bold-k" min="1" max="15" value="7"
+          style="width:100%;margin-top:8px;accent-color:#f6c90e" oninput="onBoldKChange()">
+      </div>
+
+      <!-- 소거 번호 표시 -->
+      <div style="margin-bottom:6px;font-size:12px;color:#8b949e">소거된 번호 (빈도 하위순)</div>
+      <div id="bold-removed" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+
+      <!-- 후보 풀 -->
+      <div style="margin-bottom:6px;font-size:12px;color:#8b949e">후보 풀 (남은 번호)</div>
+      <div id="bold-pool-balls" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px"></div>
+    </div>
+
+    <!-- 리스크 안내 -->
+    <div id="bold-risk-box" style="background:#1a1012;border:1px solid #f65315aa;border-radius:10px;padding:12px 16px;font-size:12px;color:#f6a090;margin-bottom:16px;line-height:1.6">
+      <b>⚠️ 현재 K=7 설정의 의미</b><br>
+      커버율 <b id="bold-risk-cover">37%</b> — 당첨번호 6개가 후보풀 안에 모두 들어올 확률<br>
+      실패율 <b id="bold-risk-fail">63%</b> — 이 경우 당첨번호 중 하나 이상이 소거된 번호에 포함됨 (완전 실패)
+    </div>
+
+    <button class="generate-btn" style="background:linear-gradient(135deg,#f65315,#ff9900)" onclick="boldGenerate()">
+      🎯 도전적 번호 생성하기
+    </button>
+
+    <div id="bold-result-sets" class="result-sets"></div>
+
+    <!-- 세트 수 슬라이더 -->
+    <div class="card" style="margin-top:16px">
+      <label style="font-size:12px;color:#8b949e">생성 세트 수: <span id="bold-v-sets" style="color:#f6c90e;font-weight:700">5</span>세트</label>
+      <input type="range" id="bold-s-sets" min="1" max="10" value="5"
+        style="width:100%;margin-top:6px;accent-color:#f6c90e"
+        oninput="document.getElementById('bold-v-sets').textContent=this.value">
     </div>
   </div>
 
@@ -464,12 +537,153 @@ function renderHistory() {
   }).join('');
 }
 
+// ── 도전적 추출 로직 ──────────────────────────────────────────
+// 백테스트 결과 (직전100회 기준, 100회 검증) — K:1~15
+const BOLD_BT = {
+  //  K: [cover_rate, multiplier]
+  1:  [0.91, 1.050],
+  2:  [0.74, 0.989],
+  3:  [0.65, 1.009],
+  4:  [0.52, 0.942],
+  5:  [0.46, 0.976],
+  6:  [0.40, 0.999],
+  7:  [0.37, 1.092],
+  8:  [0.28, 0.981],
+  9:  [0.26, 1.087],
+  10: [0.19, 0.953],
+  11: [0.16, 0.969],
+  12: [0.13, 0.956],
+  13: [0.11, 0.989],
+  14: [0.08, 0.885],
+  15: [0.06, 0.823],
+};
+
+function comb(n, k) {
+  if (k > n || k < 0) return 0;
+  if (k === 0 || k === n) return 1;
+  let r = 1;
+  for (let i = 0; i < k; i++) { r = r * (n - i) / (i + 1); }
+  return Math.round(r);
+}
+
+function getBoldSortedNums() {
+  // 전체 200회 빈도순 정렬
+  return Array.from({length:45},(_,i)=>i+1).sort((a,b)=>FREQ[a]-FREQ[b]);
+}
+
+function onBoldKChange() {
+  const K = parseInt(document.getElementById('bold-k').value);
+  document.getElementById('bold-k-val').textContent = K;
+  const N = 45 - K;
+  const CN6 = comb(N, 6);
+  document.getElementById('bold-pool-val').textContent = N;
+  document.getElementById('bold-comb-val').textContent = CN6.toLocaleString();
+  const bt = BOLD_BT[K] || [0, 0];
+  const mult = bt[1];
+  document.getElementById('bold-mult-val').textContent = mult.toFixed(3)+'x';
+  document.getElementById('bold-mult-val').style.color = mult >= 1.0 ? '#3fb950' : '#f85149';
+
+  // 리스크 박스
+  const cover = Math.round(bt[0]*100);
+  document.getElementById('bold-risk-cover').textContent = cover + '%';
+  document.getElementById('bold-risk-fail').textContent = (100-cover) + '%';
+
+  // 소거 번호
+  const sorted = getBoldSortedNums();
+  const removed = sorted.slice(0, K);
+  const pool    = sorted.slice(K);
+
+  const rEl = document.getElementById('bold-removed');
+  rEl.innerHTML = removed.map(n => `
+    <div style="width:32px;height:32px;border-radius:50%;background:#2d1b1b;border:2px solid #f6531566;
+      display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#f65315">
+      ${n}
+    </div>`).join('');
+
+  const pEl = document.getElementById('bold-pool-balls');
+  pEl.innerHTML = pool.map(n => `
+    <div style="width:30px;height:30px;border-radius:50%;${ballStyle(n)};
+      display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">
+      ${n}
+    </div>`).join('');
+
+  // 테이블 선택된 행 하이라이트
+  document.querySelectorAll('#bold-bt-body tr').forEach(tr => {
+    tr.style.background = parseInt(tr.dataset.k) === K ? '#1c2820' : '';
+    tr.style.borderLeft  = parseInt(tr.dataset.k) === K ? '3px solid #f6c90e' : '3px solid transparent';
+  });
+}
+
+function initBoldTab() {
+  // 백테스트 결과 테이블 렌더
+  const tbody = document.getElementById('bold-bt-body');
+  const C45_6 = comb(45,6);
+  tbody.innerHTML = Object.entries(BOLD_BT).map(([k, [cr, mx]]) => {
+    const K=parseInt(k), N=45-K, CN6=comb(N,6);
+    const isBest = K===7;
+    const multColor = mx>=1.0 ? '#3fb950' : '#8b949e';
+    return `<tr data-k="${K}" style="border-bottom:1px solid #21262d;cursor:pointer;border-left:3px solid transparent"
+        onclick="document.getElementById('bold-k').value=${K};onBoldKChange()">
+      <td style="padding:5px 8px;text-align:center;color:${isBest?'#f6c90e':'#e6edf3'};font-weight:${isBest?700:400}">${K}${isBest?' ★':''}</td>
+      <td style="padding:5px 8px;text-align:center;color:#8b949e">${N}개</td>
+      <td style="padding:5px 8px;text-align:right;color:#8b949e">${CN6.toLocaleString()}</td>
+      <td style="padding:5px 8px;text-align:center;color:${cr>=0.5?'#3fb950':cr>=0.3?'#f6c90e':'#f85149'}">${Math.round(cr*100)}%</td>
+      <td style="padding:5px 8px;text-align:center;color:${multColor};font-weight:${mx>=1.05?700:400}">${mx.toFixed(3)}x</td>
+    </tr>`;
+  }).join('');
+  onBoldKChange();  // 초기 렌더
+}
+
+function boldGenerate() {
+  const K = parseInt(document.getElementById('bold-k').value);
+  const count = parseInt(document.getElementById('bold-s-sets').value);
+  const sorted = getBoldSortedNums();
+  const pool   = sorted.slice(K);  // 풀 (저빈도 K개 제거)
+
+  const sets = [];
+  for (let s = 0; s < count; s++) {
+    // 풀 내에서 가중치 없이 균등 샘플링 (소거 자체가 전략이므로)
+    let nums, tries = 0;
+    do {
+      const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      nums = shuffled.slice(0,6).sort((a,b)=>a-b);
+      tries++;
+    } while (tries < 500 && !boldIsValid(nums));
+    sets.push({ nums, sum: nums.reduce((a,b)=>a+b,0) });
+  }
+
+  const el = document.getElementById('bold-result-sets');
+  const [cr, mx] = BOLD_BT[K];
+  el.innerHTML = `
+    <div style="background:#1a1f2e;border:1px solid #30363d;border-radius:10px;padding:12px 16px;margin-bottom:12px;font-size:12px;color:#8b949e">
+      K=${K} 소거 | 풀 ${45-K}개 | 커버율 ${Math.round(cr*100)}% | 기대배수 <span style="color:${mx>=1?'#3fb950':'#f85149'}">${mx.toFixed(3)}x</span>
+    </div>
+    ${sets.map((s,i) => `
+      <div class="number-set">
+        <span class="set-label">${i+1}세트</span>
+        <div class="balls">
+          ${s.nums.map(n=>`<div class="ball" style="${ballStyle(n)}">${n}</div>`).join('')}
+        </div>
+        <div class="set-score">합계 <b style="color:#e6edf3">${s.sum}</b></div>
+      </div>
+    `).join('')}`;
+}
+
+function boldIsValid(nums) {
+  // 기본 필터(합계·구간)만 적용, 홀짝·연속은 완화
+  const sum = nums.reduce((a,b)=>a+b,0);
+  if (sum < 80 || sum > 210) return false;
+  const zones = new Set(nums.map(n=>n<=9?0:n<=19?1:n<=29?2:n<=39?3:4));
+  return zones.size >= 2;
+}
+
 // ── 탭 전환 ──────────────────────────────────────────────────
 function switchTab(name) {
-  ['predict','stats','history'].forEach((t,i) => {
+  ['predict','stats','bold','history'].forEach((t,i) => {
     document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
   });
+  if (name === 'bold') initBoldTab();
 }
 
 // ── 초기화 ───────────────────────────────────────────────────
